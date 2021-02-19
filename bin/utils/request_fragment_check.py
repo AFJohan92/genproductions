@@ -264,6 +264,15 @@ def find_file(dir_path,patt):
             if file.endswith(patt):
                 return root+'/'+str(file)
 
+def check_replace(runcmsgridfile):
+    error_check_replace = 0
+    replace_mccont = os.popen('grep "_REPLACE" '+str(runcmsgridfile)).read()
+    if len(replace_mccont):
+        print "* [ERROR] Incomplete gridpack. Replace _REPLACE strings in runcmsgrid.sh:"
+        print (replace_mccont)
+        error_check_replace += 1
+    return error_check_replace 
+
 def xml_check_and_patch(f,cont,gridpack_eos_path,my_path,pi):
     xml = str(re.findall('xmllint.*',cont))
     cur_dir = os.getcwd()
@@ -516,7 +525,8 @@ for num in range(0,len(prepid)):
         # Ultra-legacy sample settings' compatibility
         pi_prime = "NULL"
         prime_tmp = []
-        if "Summer20UL18" in pi or "Summer20UL17" in pi or "Summer20UL16wmLHEGENAPV" in pi or "Summer20UL16GENAPV" in pi or "Summer20UL16" in pi and "GEN" in pi and "pLHE" not in pi:
+#        if "Summer20UL18" in pi or "Summer20UL17" in pi or "Summer20UL16wmLHEGENAPV" in pi or "Summer20UL16GENAPV" in pi or "Summer20UL16" in pi and "GEN" in pi and "pLHE" not in pi:
+        if "Summer20UL18" in pi or "Summer20UL17" in pi or "Summer20UL16wmLHEGENAPV" in pi or "Summer20UL16GENAPV" in pi or "Summer20UL16" in pi and "GEN" in pi:
             prime = get_requests_from_datasetname(dn)
             if len(prime) == 0:
                 print "* [ERROR] No corresponing Summer20UL16 request to compare to for consistency."
@@ -526,7 +536,8 @@ for num in range(0,len(prepid)):
 		print "Related requests:"
                 for rr in prime:
                     print(rr['prepid'],rr['extension'],ext)
-                    if "Summer20UL16" in rr['prepid'] and "GEN" in rr['prepid'] and ext == rr['extension'] and "APV" not in rr['prepid'] and ("Summer20UL18" in pi or "Summer20UL17" in pi or "Summer20UL16wmLHEGENAPV" in pi or "Summer20UL16GENAPV" in pi):
+#                    if "Summer20UL16" in rr['prepid'] and "GEN" in rr['prepid'] and ext == rr['extension'] and "APV" not in rr['prepid'] and ("Summer20UL18" in pi or "Summer20UL17" in pi or "Summer20UL16wmLHEGENAPV" in pi or "Summer20UL16GENAPV" in pi):
+                    if "Summer20UL16" in rr['prepid'] and "GEN" in rr['prepid'] and "APV" not in rr['prepid'] and ("Summer20UL18" in pi or "Summer20UL17" in pi or "Summer20UL16wmLHEGENAPV" in pi or "Summer20UL16GENAPV" in pi):
                         pi_prime = rr['prepid']
                         cmssw_prime = rr['cmssw_release']
                     if "Summer20UL16" in pi and "APV" not in pi and "GEN" in rr['prepid'] and ext == rr['extension'] and "Summer19UL17" in rr['prepid']:
@@ -840,8 +851,10 @@ for num in range(0,len(prepid)):
                         slha_flag = 0
                     if slha_flag == 1:
                         slha_all_path = os.path.dirname(gridpack_eos_path)
-                        list_gridpack_cvmfs_path = 'ls '+ gridpack_cvmfs_path+' | head -1 | tr \'\n\' \' \''
-                        gridpack_cvmfs_path = os.popen(list_gridpack_cvmfs_path).read()
+                        print "Directory: "+slha_all_path
+                        list_gridpack_cvmfs_path = os.listdir(slha_all_path)[0]
+                        print list_gridpack_cvmfs_path
+                        gridpack_cvmfs_path = slha_all_path+'/'+list_gridpack_cvmfs_path
                         print "SLHA request - checking single gridpack:"
                         print gridpack_cvmfs_path
                 if os.path.isfile(gridpack_cvmfs_path) is True:
@@ -904,6 +917,18 @@ for num in range(0,len(prepid)):
                         print "*           You may try to request more events per phase-space region in the gridpack."
                         warning += 1
                 if mg_gp is True:
+                    dir_path = os.path.join(my_path,pi,"InputCards")
+                    if os.path.isdir(dir_path):
+                        input_cards_customize_card = find_file(dir_path,"customizecards.dat")
+                        if input_cards_customize_card:
+                            cw_cnt = os.popen('grep -c compute_widths '+input_cards_customize_card).read()
+                            if cw_cnt > 0:
+                                print "* [ERROR] compute_widths should not be used in customizecards."
+                                print "*         Instead use \"set width X auto\" to compute the widths for X and change the parameter card settings."  
+                                error += 1
+                            else:
+                                print "* [OK] customizecards.dat doesn't have compute_widths."                    
+                if mg_gp is True:
                     filename_rc = my_path+'/'+pi+'/'+'process/madevent/Cards/run_card.dat'
                     fname_p2 = my_path+'/'+pi+'/'+'process/Cards/run_card.dat'
                     if os.path.isfile(fname_p2) is True :
@@ -912,7 +937,11 @@ for num in range(0,len(prepid)):
                     matching_c = int(re.search(r'\d+',ickkw_c).group())
                     maxjetflavor = os.popen('more '+filename_rc+' | tr -s \' \' | grep "= maxjetflavor"').read()
                     print(ickkw_c, matching_c, maxjetflavor)
-                    maxjetflavor = int(re.search(r'\d+',maxjetflavor).group())
+                    if len(maxjetflavor) != 0:
+                        maxjetflavor = int(re.search(r'\d+',maxjetflavor).group())
+                    else:
+                        print"* [WARNING] maxjetflavor not defined in run_card.dat"
+                        warning += 1
                     print "maxjetflavor = "+str(maxjetflavor)
                     if matching_c == 3 and pythia8_flag != 0:
                         ps_hw = os.popen('grep parton_shower '+filename_rc).read()
@@ -1012,8 +1041,10 @@ for num in range(0,len(prepid)):
                             print "* [WARNING] nFinal(="+str(nFinal) + ") may not be equal to the number of final state particles before decays (="+str(nfinstatpar)+")"
                             warning += 1
                     if os.path.isfile(my_path+'/'+pi+'/'+'runcmsgrid.sh') is True: 
-                        with open(os.path.join(my_path, pi, "runcmsgrid.sh"),'r+') as f:
+                        runcmsgrid_file = my_path+'/'+pi+'/'+'runcmsgrid.sh'
+                        with open(runcmsgrid_file,'r+') as f:
                             content = f.read()
+                            error += check_replace(runcmsgrid_file)
                             match = re.search(r"""process=(["']?)([^"']*)\1""", content)
 			    warning1,error1 = xml_check_and_patch(f,content,gridpack_eos_path,my_path,pi)
 		            warning += warning1
@@ -1025,6 +1056,7 @@ for num in range(0,len(prepid)):
                     if os.path.isfile(my_path+'/'+pi+'/'+'external_tarball/runcmsgrid.sh') is True:
                         with open(os.path.join(my_path, pi, "external_tarball/runcmsgrid.sh"),'r+') as f2:
                             content2 = f2.read()
+                            error += check_replace(content2)
                             match = re.search(r"""process=(["']?)([^"']*)\1""", content2)
 			    warning1,error1 = xml_check_and_patch(f2,content2,gridpack_eos_path,my_path,pi)
                             et_flag = 1
@@ -1237,6 +1269,7 @@ for num in range(0,len(prepid)):
                         runcmsgrid_file = os.path.join(my_path, pi, "runcmsgrid.sh")
                         with open(runcmsgrid_file) as fmg:
                             fmg_f = fmg.read()
+                            error += check_replace(runcmsgrid_file)
                             fmg_f = re.sub(r'(?m)^ *#.*\n?', '',fmg_f)
                             mg_me_pdf_list = re.findall('pdfsets=\S+',fmg_f)
                             if mg5_aMC_version >= 260:
@@ -1492,7 +1525,7 @@ for num in range(0,len(prepid)):
                 if 'Summer20UL' not in pi and 'Summer19UL' not in pi and 'Fall18' not in pi and 'Fall17' not in pi and 'Run3' not in pi:
                     print "* [WARNING] Do you really want to have tune "+tune[0] +" in this campaign?"
                     warning += 1
-        if 'Fall18' in pi and 'UL' in pi and fsize != 0 and herwig_flag == 0:
+        if fsize != 0 and herwig_flag == 0:
             if int(os.popen('grep -c "from Configuration.Generator.PSweightsPythia.PythiaPSweightsSettings_cfi import *" '+pi).read()) != 1 :
                 print "* [WARNING] No parton shower weights configuration in the fragment. In the Fall18 campaign, we recommend to include Parton Shower weights"
                 warning += 1
@@ -1534,8 +1567,9 @@ for num in range(0,len(prepid)):
         if int(os.popen('grep -c -i filter '+pi).read()) > 3 and filter_eff == 1:
             print "* [WARNING] Filters in the fragment but filter efficiency = 1"
             warning += 1
-        os.popen("rm -rf "+my_path+pi).read()
-        os.popen("rm -rf "+my_path+'eos/'+pi).read()
+        if args.develop is False:
+            os.popen("rm -rf "+my_path+pi).read()
+            os.popen("rm -rf "+my_path+'eos/'+pi).read()
         print "***********************************************************************************"
         print "Number of warnings = "+ str(warning)
         print "Number of errors = "+ str(error)
